@@ -1,29 +1,14 @@
 //! A CLI tool for sending Roku commands.
 //!
 //! See https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#keypress-key-values
-
-// Home
-// Rev
-// Fwd
-// Play
-// Select
-// Left
-// Right
-// Down
-// Up
-// Back
-// InstantReplay
-// Info
-// Backspace
-// Search
-// Enter
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use structopt::StructOpt;
+use tracing::{event, Level};
 
-const ROKU_DEVICE_IP: &str = "http://192.168.1.2:8060";
+const ROKU_DEVICE_IP: &str = "http://192.168.1.3:8060";
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "joku")]
@@ -44,9 +29,8 @@ enum RokuCommand {
     VolumeDown,
     Mute,
     PowerOff,
-    /// A type to handle the options shown here:
-    /// https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#search-examples
-    #[allow(dead_code)]
+    /// A type to handle the Roku External Control Protocol Search API:
+    /// [`https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#search-examples`]
     Search {
         keyword: String,
         #[structopt(long)]
@@ -58,11 +42,6 @@ enum RokuCommand {
         #[structopt(long)]
         launch: Option<bool>,
     },
-}
-#[derive(Serialize, Deserialize)]
-struct Test {
-    name: String,
-    job: String,
 }
 
 impl Display for RokuCommand {
@@ -86,7 +65,7 @@ impl Display for RokuCommand {
                 // jank. has to be a way to just use the serialization on the nested struct
                 let qs = serde_qs::to_string(&self)
                     .unwrap()
-                    .replace(&['[', ']'], "")
+                    .replace(['[', ']'], "")
                     .replace("Search", "");
 
                 format!("{}{}", base, qs)
@@ -98,6 +77,8 @@ impl Display for RokuCommand {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    tracing_subscriber::fmt().init();
+
     let cli = RokuCommand::from_args();
 
     send_cmd(cli).await?;
@@ -107,10 +88,13 @@ async fn main() -> Result<()> {
 
 async fn send_cmd(command: RokuCommand) -> Result<()> {
     let client = Client::new();
-
-    dbg!(&command);
+    event!(Level::INFO, "Sending {}", command);
     let resp = client.post(urlify(command)).body("").send().await?;
-    println!("{:#?}", resp);
+    if resp.status().is_success() {
+        event!(Level::INFO, "Done");
+    } else {
+        event!(Level::ERROR, "Command failed: {:?}", resp);
+    }
 
     Ok(())
 }
