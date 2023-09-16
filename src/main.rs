@@ -14,6 +14,10 @@ use tracing::{event, Level};
 // TODO: It'd be nice if we didn't have to update this when the IP is reassigned.
 const ROKU_DEVICE_IP: &str = "http://192.168.1.3:8060";
 
+/// Incomplete. See <https://developer.mozilla.org/en-US/docs/Glossary/Entity#reserved_characters>
+const HTML_RESERVED_CHARS: [char; 12] =
+    ['?', '[', ']', '@', '#', ':', '<', '>', '&', '"', '-', '_'];
+
 /// Provides the subcommands to excute the [`External Control API`](https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#keypress-key-values)
 #[derive(Debug, StructOpt)]
 #[structopt(name = "joku")]
@@ -46,10 +50,6 @@ enum RokuCommand {
         launch: Option<bool>,
     },
 }
-
-/// Incomplete. See <https://developer.mozilla.org/en-US/docs/Glossary/Entity#reserved_characters>
-const HTML_RESERVED_CHARS: [char; 12] =
-    ['?', '[', ']', '@', '#', ':', '<', '>', '&', '"', '-', '_'];
 
 impl Display for RokuCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
