@@ -1,19 +1,22 @@
 //! A CLI tool for sending Roku commands.
 //!
+//! I named the command `joku` because my name starts with a J. That's really it.
+//!
 //! See https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#keypress-key-values
+use std::fmt::Display;
+
 use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 use structopt::StructOpt;
 use tracing::{event, Level};
 
+// TODO: It'd be nice if we didn't have to update this when the IP is reassigned.
 const ROKU_DEVICE_IP: &str = "http://192.168.1.3:8060";
 
+/// Provides the subcommands to excute the [`External Control API`](https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#keypress-key-values)
 #[derive(Debug, StructOpt)]
 #[structopt(name = "joku")]
-
-/// Provides the subcommands to excute the [`External Control API`](https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#keypress-key-values)
 #[derive(Serialize, Deserialize)]
 enum RokuCommand {
     Home,
@@ -44,31 +47,39 @@ enum RokuCommand {
     },
 }
 
+/// Incomplete. See <https://developer.mozilla.org/en-US/docs/Glossary/Entity#reserved_characters>
+const HTML_RESERVED_CHARS: [char; 12] =
+    ['?', '[', ']', '@', '#', ':', '<', '>', '&', '"', '-', '_'];
+
 impl Display for RokuCommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key_cmd = "keypress";
         let command = match self {
-            RokuCommand::Pause => "keypress/Pause".to_string(),
-            RokuCommand::Home => "keypress/Home".to_string(),
-            RokuCommand::Play => "keypress/Play".to_string(),
-            RokuCommand::Select => "keypress/Select".to_string(),
-            RokuCommand::Left => "keypress/Left".to_string(),
-            RokuCommand::Right => "keypress/Right".to_string(),
-            RokuCommand::Down => "keypress/Down".to_string(),
-            RokuCommand::Up => "keypress/Up".to_string(),
-            RokuCommand::Back => "keypress/Back".to_string(),
-            RokuCommand::VolumeUp => "keypress/VolumeUp".to_string(),
-            RokuCommand::VolumeDown => "keypress/VolumeDown".to_string(),
-            RokuCommand::Mute => "keypress/Mute".to_string(),
-            RokuCommand::PowerOff => "keypress/PowerOff".to_string(),
+            RokuCommand::Pause => format!("{key_cmd}/Pause"),
+            RokuCommand::Home => format!("{key_cmd}/Home"),
+            RokuCommand::Play => format!("{key_cmd}/Play"),
+            RokuCommand::Select => format!("{key_cmd}/Select"),
+            RokuCommand::Left => format!("{key_cmd}/Left"),
+            RokuCommand::Right => format!("{key_cmd}/Right"),
+            RokuCommand::Down => format!("{key_cmd}/Down"),
+            RokuCommand::Up => format!("{key_cmd}/Up"),
+            RokuCommand::Back => format!("{key_cmd}/Back"),
+            RokuCommand::VolumeUp => format!("{key_cmd}/VolumeUp"),
+            RokuCommand::VolumeDown => format!("{key_cmd}/VolumeDown"),
+            RokuCommand::Mute => format!("{key_cmd}/Mute"),
+            RokuCommand::PowerOff => format!("{key_cmd}/PowerOff"),
             RokuCommand::Search { .. } => {
-                let base = "search/browser?";
-                // jank. has to be a way to just use the serialization on the nested struct
+                let base = "search/browser";
+                // Creates a querystring
                 let qs = serde_qs::to_string(&self)
                     .unwrap()
-                    .replace(['[', ']'], "")
+                    .chars()
+                    // Filter out HTML reserved chars, and this is probably missing some.
+                    .filter(|c| !HTML_RESERVED_CHARS.contains(c))
+                    .collect::<String>()
                     .replace("Search", "");
 
-                format!("{}{}", base, qs)
+                format!("{base}?{qs}")
             }
         };
         write!(f, "{}", command)
@@ -87,9 +98,10 @@ async fn main() -> Result<()> {
 }
 
 async fn send_cmd(command: RokuCommand) -> Result<()> {
+    event!(Level::INFO, "Sending {:?}", command);
     let client = Client::new();
-    event!(Level::INFO, "Sending {}", command);
-    let resp = client.post(urlify(command)).body("").send().await?;
+    let resp = client.post(urlify(command)).send().await?;
+
     if resp.status().is_success() {
         event!(Level::INFO, "Done");
     } else {
@@ -100,5 +112,5 @@ async fn send_cmd(command: RokuCommand) -> Result<()> {
 }
 
 fn urlify(command: RokuCommand) -> String {
-    format!("{}/{}", ROKU_DEVICE_IP, command)
+    format!("{ROKU_DEVICE_IP}/{command}")
 }
