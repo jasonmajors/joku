@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use ssdp_client::SearchTarget;
 use std::time::Duration;
 use structopt::StructOpt;
-use tracing::{debug, event, Level};
+use tracing::info;
 
 /// Incomplete. See <https://developer.mozilla.org/en-US/docs/Glossary/Entity#reserved_characters>
 const HTML_RESERVED_CHARS: [char; 12] =
@@ -94,21 +94,51 @@ impl Display for RokuCommand {
     }
 }
 
+/// Represents the Roku device that commands are sent to.
 #[derive(Debug, Serialize, Deserialize)]
-struct RokuDevice {
+pub struct RokuDevice {
     name: String,
     addr: SocketAddr,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Config {
-    device: RokuDevice,
 }
 
 impl Display for RokuDevice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
+}
+
+/// Encapsulates sending commands to the Roku device
+struct RokuClient {
+    base: Url,
+}
+
+impl RokuClient {
+    pub fn new(base: Url) -> Self {
+        Self { base }
+    }
+
+    /// Creates a new `RokuClient`.
+    ///
+    /// This will read the device's address from the `config.toml`.
+    pub fn try_from_config(config: &PathBuf) -> Result<Self> {
+        let toml = fs::read(config)?;
+        let config: Config = basic_toml::from_slice(&toml)?;
+
+        let url = Url::parse(format!("http://{}", &config.device.addr).as_str())?;
+
+        Ok(Self::new(url))
+    }
+
+    /// Sends a `RokuCommand` to the Roku device.
+    pub async fn send(&self, command: RokuCommand, method: Method) -> Result<Response> {
+        send_cmd(command, &self.base, method).await
+    }
+}
+
+/// A representation of the config.toml file containing the name and socket address of the Roku device.
+#[derive(Debug, Serialize, Deserialize)]
+struct Config {
+    device: RokuDevice,
 }
 
 #[tokio::main]
@@ -122,20 +152,17 @@ async fn main() -> Result<()> {
 
         write_to_config(ans).await?;
     } else {
-        // Load the RokuClient and send the command
         let path = config_path()?.join("cargo.toml");
 
-        let toml = fs::read(path)?;
-        let config: Config = basic_toml::from_slice(&toml)?;
-
-        let url = Url::parse(format!("http://{}", &config.device.addr).as_str())?;
-
-        send_cmd(command, &url, Method::POST).await?;
+        let _resp = RokuClient::try_from_config(&path)?
+            .send(command, Method::POST)
+            .await?;
     }
 
     Ok(())
 }
 
+/// Where the `config.toml` file is located
 fn config_path() -> Result<PathBuf> {
     let path = PathBuf::from(env::var("HOME")?)
         .join(".config")
@@ -144,6 +171,8 @@ fn config_path() -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Writes the `RokuDevice` to the `config.toml` file.
+/// This will include the name and socket address.
 async fn write_to_config(device: RokuDevice) -> Result<()> {
     let path = config_path()?;
     fs::create_dir_all(path.clone())?;
@@ -156,7 +185,11 @@ async fn write_to_config(device: RokuDevice) -> Result<()> {
     Ok(())
 }
 
-// TODO: Move this into a struct method? RokuClient?
+/// Searches for all Roku devices on the network.
+///
+/// This will also ping each device to retrieve its "friendly name".
+/// TODO: this and its helper fn `get_roku_addr` feel like they should be apart of something...
+/// Maybe not `RokuClient`, but something...
 async fn get_roku_devices() -> Result<Vec<RokuDevice>> {
     let urls = get_roku_addr().await?;
     let device_info_futs = urls
@@ -196,8 +229,8 @@ async fn get_roku_devices() -> Result<Vec<RokuDevice>> {
     Ok(devices)
 }
 
+/// Searches for all Roku devices on the network and returns their URLs.
 async fn get_roku_addr() -> Result<Vec<Url>> {
-    dbg!("Searching for Roku devices...");
     let search_target = SearchTarget::Custom("roku".to_string(), "ecp".to_string());
     let mut responses =
         ssdp_client::search(&search_target, Duration::from_secs(2), 2, None).await?;
@@ -211,18 +244,20 @@ async fn get_roku_addr() -> Result<Vec<Url>> {
     Ok(urls)
 }
 
-async fn send_cmd(command: RokuCommand, base: &Url, method: Method) -> Result<Response> {
-    let url = urlify(base, command.clone())?;
-    event!(Level::INFO, ?url, "Sending {:?}", command);
+/// Creates the actual `Url` needed for a `RokuCommand` request.
+fn urlify(base: &Url, command: &RokuCommand) -> Result<Url> {
+    let url = base.join(&command.to_string())?;
+
+    Ok(url)
+}
+
+/// Sends a `RokuCommand` to a provided `Url`.
+async fn send_cmd(command: RokuCommand, url: &Url, method: Method) -> Result<Response> {
+    let url = urlify(url, &command)?;
+    info!(?url, "Sending {:?}", &command);
 
     let client = Client::new();
     let resp = client.request(method, url).send().await?;
 
     Ok(resp)
-}
-
-fn urlify(base: &Url, command: RokuCommand) -> Result<Url> {
-    let url = base.join(&command.to_string())?;
-
-    Ok(url)
 }
