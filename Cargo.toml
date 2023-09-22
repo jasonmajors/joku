@@ -14,3 +14,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_qs = "0.10"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+ssdp-client = "2.0.0"
+futures-util = "0.3.28"
+inquire = "0.6.2"
+quick-xml = { version = "0.30.0" }
+basic-toml = "0.1.4"
