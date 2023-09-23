@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
             let devices = roku::get_roku_devices().await?;
             let ans = Select::new("Select your primary Roku device.", devices).prompt()?;
 
-            write_to_config(ans).await?;
+            write_to_config(ans)?;
         }
         _ => {
             let path = config_path()?.join("config.toml");
@@ -59,7 +59,7 @@ fn config_path() -> Result<PathBuf> {
 
 /// Writes the `RokuDevice` to the `config.toml` file.
 /// This will include the name and socket address.
-async fn write_to_config(device: RokuDevice) -> Result<()> {
+fn write_to_config(device: RokuDevice) -> Result<()> {
     let path = config_path()?;
     fs::create_dir_all(path.clone())?;
 
