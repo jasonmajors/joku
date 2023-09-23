@@ -7,17 +7,10 @@ use std::{env, fs, path::PathBuf};
 
 use anyhow::Result;
 use inquire::Select;
-use joku::roku::{self, RokuClient, RokuCommand, RokuDevice};
+use joku::roku::{self, Config, RokuClient, RokuCommand, RokuDevice};
 use reqwest::Method;
-use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-
-/// A representation of the config.toml file containing the name and socket address of the Roku device.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
-    device: RokuDevice,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {

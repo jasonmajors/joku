@@ -180,7 +180,7 @@ impl Display for RokuDevice {
 /// A representation of the config.toml file containing the name and socket address of the Roku device.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
-    device: RokuDevice,
+    pub device: RokuDevice,
 }
 
 /// Encapsulates sending commands to the Roku device
