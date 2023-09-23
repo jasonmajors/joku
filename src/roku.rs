@@ -67,40 +67,49 @@ pub struct SearchParams {
 #[derive(Debug, StructOpt, Serialize, Deserialize, Clone)]
 pub struct LaunchParams {
     app: String,
-    link: String,
+    // TODO: It might be nice if this is optional, and we can just launch apps.
+    // In that case, we don't need a `RokuApp` variant for the app, since we don't care about
+    // parsing the link.
+    link: Option<String>,
 }
 
 impl LaunchParams {
     fn path(&self) -> Result<String> {
+        // TODO: Separate fn maybe? `load_apps` or something?
         let config = config_file()?;
         let apps: Apps = toml_from_str(&fs::read_to_string(config)?)?;
 
-        let app: RokuApp = apps
+        let app = apps
             .apps
             .into_iter()
             .find(|a| a.name.to_lowercase() == self.app.to_lowercase())
             .ok_or(anyhow!("Unknown roku app"))?
             .try_into()?;
 
-        let content_id = match app {
-            RokuApp::YouTube(app_id) => {
-                // Try to parse a URL, if its a URL, take the `v` param
-                if let Ok(url) = Url::parse(&self.link) {
-                    let query: HashMap<_, _> = url.query_pairs().into_iter().collect();
-                    let id = query
-                        .get("v")
-                        .map(|v| v.to_string())
-                        .map(|content_id| format!("{app_id}?contentId={content_id}"));
+        let path = match app {
+            // TODO: Maintaining this for each app will be very annoying...
+            // Perhaps we should have a trait that `RokuApp` implements and move the parsing there.
+            RokuApp::YouTube(app_id) => match &self.link {
+                Some(url) => {
+                    if let Ok(url) = Url::parse(url) {
+                        let query: HashMap<_, _> = url.query_pairs().into_iter().collect();
+                        // Parse the ID out of the youtube link
+                        let id = query
+                            .get("v")
+                            .map(|v| v.to_string())
+                            .map(|content_id| format!("{app_id}?contentId={content_id}"));
 
-                    id
-                } else {
-                    None
+                        id
+                    } else {
+                        None
+                    }
                 }
-            }
+                None => Some(app_id),
+            },
         }
         .ok_or(anyhow!("Invalid content identifier"))?;
 
-        Ok(content_id)
+        Ok(path)
     }
 }
 

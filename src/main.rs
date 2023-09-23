@@ -9,7 +9,7 @@ use anyhow::Result;
 use inquire::Select;
 use joku::{
     config_path,
-    roku::{self, get_roku_apps, App, Config, RokuClient, RokuCommand, RokuDevice},
+    roku::{self, App, Config, RokuClient, RokuCommand, RokuDevice},
 };
 use reqwest::{Method, Url};
 use structopt::StructOpt;
@@ -31,7 +31,7 @@ async fn main() -> Result<()> {
             let ans = Select::new("Select your primary Roku device.", devices).prompt()?;
 
             let url = Url::parse(format!("http://{}", ans.addr).as_str())?;
-            let apps: Vec<App> = get_roku_apps(&url).await?;
+            let apps: Vec<App> = roku::get_roku_apps(&url).await?;
 
             write_to_config(ans, apps)?;
         }
