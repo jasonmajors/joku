@@ -1,20 +1,19 @@
 //! Roku commands and ways to send them.
 
-use std::{
-    collections::HashMap, fmt::Display, fs, net::SocketAddr, path::PathBuf, str::FromStr,
-    time::Duration,
-};
+use std::{collections::HashMap, fmt::Display, fs, net::SocketAddr, path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, bail, Result};
+use basic_toml::from_str as toml_from_str;
 use futures_util::{stream, StreamExt};
 use quick_xml::{events::Event, Reader};
 use reqwest::{Client, Method, Response, Url};
 use serde::{Deserialize, Serialize};
+use serde_xml_rs::from_str;
 use ssdp_client::SearchTarget;
 use structopt::StructOpt;
-use tracing::debug;
+use tracing::{debug, error};
 
-use crate::urlify;
+use crate::{config_file, urlify};
 
 /// Provides the subcommands to excute the [`External Control API`](https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#keypress-key-values)
 #[derive(Debug, StructOpt)]
@@ -43,6 +42,7 @@ pub enum RokuCommand {
     /// Launches a Roku app
     Launch(LaunchParams),
     DeviceInfo,
+    ListApps,
 }
 
 /// The params for a search query, however this isn't working great!
@@ -66,18 +66,32 @@ pub struct SearchParams {
 
 #[derive(Debug, StructOpt, Serialize, Deserialize, Clone)]
 pub struct LaunchParams {
-    app: RokuApp,
-    content_id: String,
+    app: String,
+    link: String,
 }
 
 impl LaunchParams {
     fn path(&self) -> Result<String> {
-        let content_id = match self.app {
-            RokuApp::YouTube => {
+        let config = config_file()?;
+        let apps: Apps = toml_from_str(&fs::read_to_string(config)?)?;
+
+        let app: RokuApp = apps
+            .apps
+            .into_iter()
+            .find(|a| a.name.to_lowercase() == self.app.to_lowercase())
+            .ok_or(anyhow!("Unknown roku app"))?
+            .try_into()?;
+
+        let content_id = match app {
+            RokuApp::YouTube(app_id) => {
                 // Try to parse a URL, if its a URL, take the `v` param
-                if let Ok(url) = Url::parse(&self.content_id) {
+                if let Ok(url) = Url::parse(&self.link) {
                     let query: HashMap<_, _> = url.query_pairs().into_iter().collect();
-                    let id = query.get("v").map(|v| v.to_string());
+                    let id = query
+                        .get("v")
+                        .map(|v| v.to_string())
+                        .map(|content_id| format!("{app_id}?contentId={content_id}"));
+
                     id
                 } else {
                     None
@@ -86,42 +100,14 @@ impl LaunchParams {
         }
         .ok_or(anyhow!("Invalid content identifier"))?;
 
-        Ok(format!("{}?contentId={content_id}", self.app.id()))
+        Ok(content_id)
     }
 }
 
-// TODO: Maintaining this is untenable.
-// To do this the right way, the `discover` command should probably get all of the existing
-// apps from `GET /query/apps` and write their metadata to the config.toml.
-// And then we can deserialize a `RokuApp` from the toml table.
-//
-// Instead I'm going to do it the easy way, and hope that the app-id values are universal.
-#[derive(Debug, StructOpt, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone)]
 enum RokuApp {
-    YouTube,
-}
-
-impl FromStr for RokuApp {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "youtube" => Ok(RokuApp::YouTube),
-            _ => bail!("Unknown Roku app: {}", s),
-        }
-    }
-}
-
-impl RokuApp {
-    /// The ID used in the Roku API for a given RokuApp variant.
-    /// These appear to all be numerical, but they're just used as IDs
-    /// so a String is more convienent.
-    fn id(&self) -> String {
-        match self {
-            Self::YouTube => String::from("837"),
-        }
-    }
+    /// The YouTube application with its application ID.
+    YouTube(String),
 }
 
 impl Display for RokuCommand {
@@ -151,6 +137,8 @@ impl Display for RokuCommand {
                 format!("{base}?{qs}")
             }
             RokuCommand::DeviceInfo => "query/device-info".to_string(),
+            // TODO: Would be nice if this also took a callback to send a follow up command, like
+            // select/pause/etc
             RokuCommand::Launch(params) => match params.path() {
                 Ok(path) => {
                     format!("launch/{}", path)
@@ -159,6 +147,7 @@ impl Display for RokuCommand {
             },
             // Not a real Roku command, we're using this to discover Roku devices on the network.
             RokuCommand::Discover => "".to_string(),
+            RokuCommand::ListApps => "query/apps".to_string(),
         };
         write!(f, "{command}")
     }
@@ -181,6 +170,7 @@ impl Display for RokuDevice {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
     pub device: RokuDevice,
+    pub apps: Vec<App>,
 }
 
 /// Encapsulates sending commands to the Roku device
@@ -209,6 +199,49 @@ impl RokuClient {
     pub async fn send(&self, command: RokuCommand, method: Method) -> Result<Response> {
         send_cmd(command, &self.base, method).await
     }
+
+    pub fn base(&self) -> &Url {
+        &self.base
+    }
+}
+
+// TODO: I hate this being `pub`. Should be just an internal type for parsing.
+#[derive(Debug, Deserialize)]
+pub struct Apps {
+    #[serde(alias = "$value")]
+    apps: Vec<App>,
+}
+
+// TODO: I hate this being `pub`. Should be just an internal type for parsing.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct App {
+    id: String,
+    r#type: String,
+    version: String,
+    #[serde(alias = "$value")]
+    name: String,
+}
+
+impl TryFrom<App> for RokuApp {
+    type Error = anyhow::Error;
+
+    fn try_from(value: App) -> std::result::Result<Self, Self::Error> {
+        match value.name.to_lowercase().as_str() {
+            "youtube" => Ok(RokuApp::YouTube(value.id)),
+            _ => bail!("Unsupported app: {:?}", value),
+        }
+    }
+}
+
+// TOOD: Make this a method on `Apps`
+pub async fn get_roku_apps(base: &Url) -> Result<Vec<App>> {
+    let resp = send_cmd(RokuCommand::ListApps, base, Method::GET).await?;
+
+    let body = resp.text().await?;
+
+    let apps: Apps = from_str(&body)?;
+
+    Ok(apps.apps)
 }
 
 /// Searches for all Roku devices on the network.
@@ -226,7 +259,7 @@ pub async fn get_roku_devices() -> Result<Vec<RokuDevice>> {
 
     let mut devices = vec![];
     // TODO: This is a lot of code to just grab a value out of the XML response.
-    // Perhaps we should just parse it manually?
+    // Perhaps we should just parse it manually? But perhaps not
     while let Some(Ok(info)) = stream.next().await {
         let addr = info.remote_addr().unwrap();
         let xml = info.text().await?;
@@ -237,7 +270,9 @@ pub async fn get_roku_devices() -> Result<Vec<RokuDevice>> {
                 Ok(Event::Start(e)) if e.name().as_ref() == b"friendly-device-name" => {
                     let name = reader
                         .read_text(e.name())
-                        .expect("Cannot decode text value");
+                        .expect("Cannot decode text value")
+                        // Fix the `"` char. There's probably other html chars that need fixing!
+                        .replace("&quot;", "\"");
 
                     devices.push(RokuDevice {
                         name: name.to_string(),
@@ -277,6 +312,9 @@ async fn send_cmd(command: RokuCommand, url: &Url, method: Method) -> Result<Res
 
     let client = Client::new();
     let resp = client.request(method, url).send().await?;
+    if !resp.status().is_success() {
+        error!(?resp, "Request to Roku device failed");
+    }
 
     Ok(resp)
 }

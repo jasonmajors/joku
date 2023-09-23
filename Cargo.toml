@@ -19,3 +19,4 @@ futures-util = "0.3.28"
 inquire = "0.6.2"
 quick-xml = { version = "0.30.0" }
 basic-toml = "0.1.4"
+serde-xml-rs = "0.6.0"
