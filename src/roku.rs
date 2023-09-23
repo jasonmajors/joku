@@ -21,7 +21,7 @@ use crate::urlify;
 #[structopt(name = "joku")]
 #[derive(Serialize, Deserialize, Clone)]
 pub enum RokuCommand {
-    /// Not a real Roku command. We'll use this to discover Roku devices on the network.
+    /// Discover Roku devices on the network.
     Discover,
     Home,
     Play,
@@ -36,10 +36,11 @@ pub enum RokuCommand {
     VolumeDown,
     Mute,
     PowerOff,
-    /// A type to handle the Roku External Control Protocol Search API:
+    /// Search using the Roku External Control Protocol Search API:
     /// [`https://developer.roku.com/docs/developer-program/debugging/external-control-api.md#search-examples`]
     /// TODO: This doesn't seem to work great. Especially the launch flag
     Search(SearchParams),
+    /// Launches a Roku app
     Launch(LaunchParams),
     DeviceInfo,
 }
