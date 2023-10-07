@@ -31,4 +31,37 @@ name = "Apple TV"
 ```
 
 ## Commands
+```
+USAGE:
+    joku <SUBCOMMAND>
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    back           
+    device-info    
+    discover       Discover Roku devices on the network
+    down           
+    help           Prints this message or the help of the given subcommand(s)
+    home           
+    launch         Launches a Roku app
+    left           
+    list-apps      
+    mute           
+    pause          
+    play           
+    power-off      
+    right          
+    search         Search using the Roku External Control Protocol Search API:
+                   [`https://developer.roku.com/docs/developer-
+                   program/debugging/external-control-api.md#search-examples`] TODO: This doesn't seem to work great. Especially the launch flag
+    select         
+    up             
+    volume-down    
+    volume-up      
+
+```
 ## TODOs
+* Support launching apps other than YouTube
