@@ -14,7 +14,7 @@ If you don't have `cargo`, first install it:
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-If you already `cargo`:
+If you already have `cargo`:
 ```
 # Download and install
 git clone git@github.com:jasonmajors/joku.git && cd joku && cargo install --path .
