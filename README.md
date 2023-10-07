@@ -8,6 +8,13 @@ Download the code however you prefer.
 
 You can build the binary with `cargo build` or you can install with `cargo install --path .`. The examples here assume the `cargo install` option.
 
+If you don't have `cargo`, first install it:
+
+```
+curl https://sh.rustup.rs -sSf | sh
+```
+
+If you already `cargo`:
 ```
 # Download and install
 git clone git@github.com:jasonmajors/joku.git && cd joku && cargo install --path .
