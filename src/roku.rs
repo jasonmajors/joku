@@ -91,18 +91,7 @@ impl LaunchParams {
             // Perhaps we should have a trait that `RokuApp` implements and move the parsing there.
             RokuApp::YouTube(app_id) => match &self.link {
                 Some(url) => {
-                    if let Ok(url) = Url::parse(url) {
-                        let query: HashMap<_, _> = url.query_pairs().into_iter().collect();
-                        // Parse the ID out of the youtube link
-                        let id = query
-                            .get("v")
-                            .map(|v| v.to_string())
-                            .map(|content_id| format!("{app_id}?contentId={content_id}"));
-
-                        id
-                    } else {
-                        None
-                    }
+                    handle_youtube(url).map(|content_id| format!("{app_id}?contentId={content_id}"))
                 }
                 None => Some(app_id),
             },
@@ -326,4 +315,39 @@ async fn send_cmd(command: RokuCommand, url: &Url, method: Method) -> Result<Res
     }
 
     Ok(resp)
+}
+
+fn handle_youtube(content_id: &str) -> Option<String> {
+    content_id
+        .parse::<Url>()
+        .ok()
+        .as_ref()
+        .and_then(extract_youtube_content_id_from_url)
+}
+
+fn extract_youtube_content_id_from_url(url: &Url) -> Option<String> {
+    if url.path().contains("short") {
+        url.path_segments()?.last().map(ToOwned::to_owned)
+    } else {
+        let query: HashMap<_, _> = url.query_pairs().into_iter().collect();
+        let id = query.get("v").map(|v| v.to_string());
+        id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn youtube_urls() {
+        fn test(input: &str, output: Option<&str>) {
+            assert_eq!(handle_youtube(input).as_deref(), output)
+        }
+
+        test("https://youtube.com/watch?v=123", Some("123"));
+        test("https://youtube.com/shorts/123", Some("123"));
+        test("https://example.org/video", None);
+        test("not-a-url", None);
+    }
 }
